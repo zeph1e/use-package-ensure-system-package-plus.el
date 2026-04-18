@@ -1,0 +1,120 @@
+#+title: use-package-ensure-system-package+
+#+author: Yunsik Jang
+#+email: z3ph1e@gmail.com
+
+An Emacs package that improves [[https://github.com/jwiegley/use-package][use-package]]'s =:ensure-system-package= keyword by
+running all system package installations through a *single shared shell session*,
+so =sudo= only prompts for a password once per batch.
+
+* The Problem
+
+=use-package-ensure-system-package= installs missing system packages by calling
+=async-shell-command= for each =:ensure-system-package= declaration.  On a fresh
+environment with many packages this means:
+
+- A separate shell process is spawned per install.
+- Each process that calls =sudo= prompts for your password independently.
+- Multiple package managers can run concurrently, causing race conditions
+  (e.g., two =apt install= processes locking =/var/lib/dpkg/lock= at once).
+
+* The Fix
+
+This package advises =use-package-ensure-system-package-consify= to replace
+=async-shell-command= with a custom dispatcher that:
+
+1. Enqueues every install command into a FIFO queue.
+2. Maintains *one persistent =/bin/bash= process* for the lifetime of the queue.
+3. Sends commands to the shell one at a time via =process-send-string=, detecting
+   completion with a sentinel echo (=UPESP+DONE:<n>=).
+4. Automatically bootstraps missing package managers (e.g. installs =npm= via
+   =apt= before running an =npm install=).
+5. Sends =exit= to the shell when the queue drains, then recreates it on the
+   next install batch.
+
+Because all commands share one shell, =sudo='s credential cache persists across
+the entire batch — you type your password once.
+
+* Installation
+
+** With =use-package= and =straight.el= (recommended)
+
+#+begin_src emacs-lisp
+(use-package use-package-ensure-system-package+
+  :straight (:type git :host github
+             :repo "zeph1e/use-package-ensure-system-package-plus.el"
+             :local-repo "use-package-ensure-system-package+"))
+#+end_src
+
+This must be placed after =use-package= and =use-package-ensure-system-package=
+are loaded.
+
+** Manual
+
+Clone the repository into your Emacs =load-path=:
+
+#+begin_src sh
+git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
+  ~/.emacs.d/plugins/use-package-ensure-system-package+
+#+end_src
+
+Then require it after =use-package= and =use-package-ensure-system-package=:
+
+#+begin_src emacs-lisp
+(require 'use-package-ensure-system-package+)
+#+end_src
+
+* Usage
+
+No changes to your existing =use-package= forms are needed.  The package works
+transparently — just use =:ensure-system-package= as usual:
+
+#+begin_src emacs-lisp
+(use-package lsp-mode
+  :ensure-system-package
+  ((typescript-language-server . "npm -g install typescript-language-server")
+   (pylsp . "sudo apt install -y python3-pylsp")))
+
+(use-package helm
+  :ensure-system-package (ag . "sudo apt install -y silversearcher-ag"))
+#+end_src
+
+When Emacs starts and these packages are missing, all installs are queued and
+run sequentially in the =*upesp+ installer*= buffer.  =sudo= is only invoked
+once.
+
+* Package Manager Bootstrap
+
+If a package manager itself is missing, it is installed automatically before
+its packages are queued:
+
+| Package manager | Bootstrap commands                                          |
+|-----------------+-------------------------------------------------------------|
+| =apt=           | /(assumed present)/                                         |
+| =npm=           | =sudo apt install -y npm= → =npm config set prefix ~/.local= |
+| =pip=           | =sudo apt install -y pip3=                                  |
+
+To add more package managers, extend =upesp+:package-manager-deps=:
+
+#+begin_src emacs-lisp
+(add-to-list 'upesp+:package-manager-deps
+             '("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y")))
+#+end_src
+
+* Running the Tests
+
+Unit and functional tests are written in ERT and live in the =test/= directory.
+
+#+begin_src sh
+# Run all tests
+./test/run-tests.sh
+
+# Unit tests only (no real shell spawned)
+./test/run-tests.sh unit
+
+# Functional tests only (spawns real /bin/bash processes)
+./test/run-tests.sh func
+#+end_src
+
+* License
+
+You can use, modify, and redistribute this freely.
