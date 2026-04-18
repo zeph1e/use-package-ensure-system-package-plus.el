@@ -77,8 +77,10 @@
         upesp+:shell-process)
     (let ((buf (get-buffer-create upesp+:shell-buffer)))
       (with-current-buffer buf (erase-buffer))
-      (let ((process-environment (cons (format "PS1=%s" upesp+:shell-prompt)
-                                       process-environment)))
+
+      (let ((process-environment `("TERM=dumb"
+                                   ,(format "PS1=%s" upesp+:shell-prompt)
+                                   ,@process-environment)))
         (setq upesp+:shell-process
               (make-process
                :name "upesp+-shell"
