@@ -48,8 +48,8 @@ the entire batch — you type your password once.
              :local-repo "use-package-ensure-system-package+"))
 #+end_src
 
-This must be placed after =use-package= and =use-package-ensure-system-package=
-are loaded.
+Place this just after the =straight= bootstrap, before any =use-package= form
+that uses =:ensure-system-package=.
 
 ** Manual
 
