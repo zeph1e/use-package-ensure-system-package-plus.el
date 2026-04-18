@@ -23,13 +23,16 @@ This package advises =use-package-ensure-system-package-consify= to replace
 =async-shell-command= with a custom dispatcher that:
 
 1. Enqueues every install command into a FIFO queue.
-2. Maintains *one persistent =/bin/bash= process* for the lifetime of the queue.
-3. Sends commands to the shell one at a time via =process-send-string=, detecting
-   completion with a sentinel echo (=UPESP+DONE:<n>=).
-4. Automatically bootstraps missing package managers (e.g. installs =npm= via
+2. Maintains *one persistent =/bin/bash= process* started with a custom =PS1=
+   prompt so completion can be detected reliably.
+3. Sends commands to the shell one at a time via =process-send-string=, waiting
+   for the shell prompt to appear before sending the next command.
+4. Handles =sudo= password prompts transparently through =comint=.
+5. Automatically bootstraps missing package managers (e.g. installs =npm= via
    =apt= before running an =npm install=).
-5. Sends =exit= to the shell when the queue drains, then recreates it on the
-   next install batch.
+6. When the queue drains, schedules the shell to close after a 10-second idle
+   timeout.  If new commands arrive before the timeout, the existing shell is
+   reused without restarting.
 
 Because all commands share one shell, =sudo='s credential cache persists across
 the entire batch — you type your password once.

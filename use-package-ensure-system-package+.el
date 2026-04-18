@@ -10,6 +10,8 @@
 (require 'use-package)
 (require 'use-package-ensure-system-package)
 (require 'cl-lib)
+(require 'comint)
+(require 'ansi-color)
 
 (defvar upesp+:command-queue nil
   "Queue of install commands to run sequentially.")
@@ -19,6 +21,12 @@
 
 (defvar upesp+:command-occupied nil
   "Non-nil while waiting for the current command to finish.")
+
+(defvar upesp+:command-ready nil
+  "Non-nil when shell is showing prompt.")
+
+(defvar upesp+:command-executing nil
+  "Non-nil when executing command in shell.")
 
 (defconst upesp+:package-manager-deps
   `(("apt" . nil)
@@ -31,12 +39,12 @@
 (defvar upesp+:shell-process nil
   "The single persistent shell process used for all installs.")
 
+(defvar upesp+:shell-process-terminate-timer nil
+  "Timer handle for shell-process termination.")
+
 (defconst upesp+:shell-buffer "*upesp+ installer*")
 
-(defconst upesp+:sentinel-re "UPESP\\+DONE:[0-9]+"
-  "Pattern written to shell stdout after each command to signal completion.")
-
-(defvar upesp+:sentinel-counter 0)
+(defconst upesp+:shell-prompt "upesp_plus_prompt$ ")
 
 (defun upesp+:command-need-execute (command)
   (cond
@@ -61,61 +69,97 @@
 
 (defun upesp+:ensure-shell ()
   "Return the shared shell process, starting a fresh one if needed."
-  (unless (upesp+:shell-live-p)
+  (if (upesp+:shell-live-p)
+      (progn
+        (when upesp+:shell-process-terminate-timer
+          (cancel-timer upesp+:shell-process-terminate-timer)
+          (setq upesp+:shell-process-terminate-timer nil))
+        upesp+:shell-process)
     (let ((buf (get-buffer-create upesp+:shell-buffer)))
       (with-current-buffer buf (erase-buffer))
-      (setq upesp+:command-occupied nil
-            upesp+:shell-process
-            (make-process
-             :name "upesp+-shell"
-             :buffer buf
-             :command '("/bin/bash" "--norc" "--noprofile")
-             :filter #'upesp+:process-filter
-             :sentinel #'upesp+:process-sentinel
-             :noquery t
-             :connection-type 'pipe))))
-  upesp+:shell-process)
+      (let ((process-environment (cons (format "PS1=%s" upesp+:shell-prompt)
+                                       process-environment)))
+        (setq upesp+:shell-process
+              (make-process
+               :name "upesp+-shell"
+               :buffer buf
+               :command '("/bin/bash" "--norc" "--noprofile")
+               :filter #'upesp+:process-filter
+               :sentinel #'upesp+:process-sentinel
+               :noquery t
+               :connection-type 'pty))))))
+
+(defun upesp+:watch-for-shell-prompt (string)
+  (let ((case-fold-search t))
+    (string-match (concat "^" upesp+:shell-prompt)
+                  (string-replace "\r" "" string))))
 
 (defun upesp+:process-filter (proc output)
   (when-let ((buf (process-buffer proc)))
     (with-current-buffer buf
       (goto-char (point-max))
-      (insert output)))
-  (when (string-match upesp+:sentinel-re output)
-    (setq upesp+:command-occupied nil)
-    (run-with-timer 0 nil #'upesp+:run-next)))
+      ;; (message "output: %S" output)
+      (cond ((comint-watch-for-password-prompt output))
+            ((upesp+:watch-for-shell-prompt output)
+             (setq upesp+:command-ready t)
+             (when upesp+:command-executing
+               (setq upesp+:command-occupied nil
+                     upesp+:command-executing nil)
+               (upesp+:run-next)))
+            (t (ansi-color-apply (insert output)))))))
 
 (defun upesp+:process-sentinel (proc _event)
   (unless (process-live-p proc)
+    ;; (message "reset flag")
     (setq upesp+:shell-process nil
-          upesp+:command-occupied nil)
-    (when upesp+:command-queue
-      (run-with-timer 0 nil #'upesp+:run-next))))
+          upesp+:command-ready nil
+          upesp+:command-occupied nil)))
 
 (defun upesp+:send-command (cmd)
-  (let ((proc (upesp+:ensure-shell))
-        (marker (format "echo 'UPESP+DONE:%d'" (cl-incf upesp+:sentinel-counter))))
-    (display-buffer (process-buffer proc) '(display-buffer-pop-up-window))
-    (setq upesp+:command-occupied t)
-    (process-send-string proc (format "%s\n%s\n" cmd marker))))
+  (let ((proc (upesp+:ensure-shell)))
+    ;; (display-buffer (process-buffer proc) '(display-buffer-pop-up-window))
+    (if upesp+:command-ready
+        (progn
+          ;; (message "sending cmd: %S" cmd)
+          (setq upesp+:command-ready nil
+                upesp+:command-executing t)
+          (with-current-buffer (process-buffer proc)
+            (insert (format "Executing command : %S\n" cmd)))
+          ;; (message "executing command: %S" cmd)
+          (process-send-string proc (format "%s\n" cmd)))
+      (run-with-timer 1 nil #'upesp+:send-command cmd))))
 
-(defun upesp+:run-next ()
-  (unless upesp+:command-occupied
-    (if (null upesp+:command-queue)
-        (when (upesp+:shell-live-p)
-          (process-send-string upesp+:shell-process "exit\n"))
-      (let* ((cmd (pop upesp+:command-queue))
-             (pkg (upesp+:command-need-execute cmd))
-             (deps (and pkg (upesp+:get-package-manager-deps (car pkg)))))
-        (cond
-         ((null pkg) (upesp+:run-next))
-         (deps
-          ;; Re-queue cmd after its package manager deps.
-          ;; Remove from done so it actually runs once deps finish.
-          (setq upesp+:command-done (cl-remove pkg upesp+:command-done :test #'equal))
-          (setq upesp+:command-queue (append deps (list cmd) upesp+:command-queue))
-          (upesp+:run-next))
-         (t (upesp+:send-command cmd)))))))
+(defun upesp+:finalize ()
+  (setq upesp+:shell-process-terminate-timer
+        (run-with-timer 10 nil #'upesp+:finalize-now)))
+
+(defun upesp+:finalize-now ()
+  ;; (message "killing buffer")
+  (setq upesp+:shell-process-terminate-timer nil)
+  (when upesp+:shell-process
+    (kill-buffer (process-buffer upesp+:shell-process))))
+
+(defun upesp+:run-next (&optional from-timer)
+  (cond
+   ((null from-timer)
+    (run-with-timer 0 nil #'upesp+:run-next t))
+   (t (unless upesp+:command-occupied
+        (setq upesp+:command-occupied t)
+        (let* ((cmd (pop upesp+:command-queue))
+               (pkg (upesp+:command-need-execute cmd))
+               (deps (and pkg (upesp+:get-package-manager-deps (car pkg)))))
+          ;; (message "cmd: %S, pkg: %S, deps: %S" cmd pkg deps)
+          (if (and cmd pkg)
+              (progn
+                (when deps
+                  ;; there's some dependencies to be resolved
+                  (push cmd upesp+:command-queue)  ; push current command again
+                  (setq cmd (car deps))
+                  (setq upesp+:command-queue (append (cdr deps)
+                                                     upesp+:command-queue)))
+                (upesp+:send-command cmd))
+            (setq upesp+:command-occupied nil)
+            (upesp+:finalize)))))))
 
 ;;;###autoload
 (defun upesp+:async-shell-command (command &optional _out _err)

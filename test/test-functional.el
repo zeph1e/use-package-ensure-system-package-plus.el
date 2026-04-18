@@ -25,10 +25,15 @@
   `(let ((upesp+:command-queue nil)
          (upesp+:command-done nil)
          (upesp+:command-occupied nil)
+         (upesp+:command-ready nil)
+         (upesp+:command-executing nil)
          (upesp+:shell-process nil)
-         (upesp+:sentinel-counter 0))
+         (upesp+:shell-process-terminate-timer nil))
      (unwind-protect
          (progn ,@body)
+       (when upesp+:shell-process-terminate-timer
+         (cancel-timer upesp+:shell-process-terminate-timer)
+         (setq upesp+:shell-process-terminate-timer nil))
        (when (upesp+:shell-live-p)
          (delete-process upesp+:shell-process)))))
 
@@ -115,8 +120,9 @@ Returns the predicate value or nil on timeout."
       (kill-buffer buf))
     (upesp+:async-shell-command "echo UNIQUE-MARKER")
     (upesp+:async-shell-command "echo UNIQUE-MARKER")
+    ;; Wait for the finalize timer to be set — that means the queue drained.
     (upesp+:test-wait
-     (lambda () (not upesp+:command-occupied)) 10)
+     (lambda () upesp+:shell-process-terminate-timer) 10)
     (let* ((out (or (upesp+:test-shell-output) ""))
            (count (cl-count-if
                    (lambda (line) (string-match "UNIQUE-MARKER" line))
@@ -126,41 +132,47 @@ Returns the predicate value or nil on timeout."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Shell lifecycle after queue drains
 
-(ert-deftest upesp+:func/shell-closes-after-queue-drains ()
-  "Shell process exits automatically once all commands are done."
+(ert-deftest upesp+:func/shell-schedules-finalize-after-queue-drains ()
+  "After all commands finish, finalize timer is set and shell remains alive."
   (upesp+:func-with-clean-state
     (upesp+:async-shell-command "echo drain-test")
     (should
      (upesp+:test-wait
-      (lambda () (not (upesp+:shell-live-p)))
-      10))))
+      (lambda () upesp+:shell-process-terminate-timer)
+      10))
+    (should (upesp+:shell-live-p))))
 
-(ert-deftest upesp+:func/shell-reopens-for-new-commands ()
-  "After draining and closing, new commands reopen the shell and run."
+(ert-deftest upesp+:func/shell-reused-for-commands-within-alive-window ()
+  "New commands submitted while shell is still alive after draining run on the same shell."
   (upesp+:func-with-clean-state
     (when-let ((buf (get-buffer upesp+:shell-buffer)))
       (kill-buffer buf))
-    ;; First batch
+    ;; First batch — wait until queue drains (finalize timer set).
     (upesp+:async-shell-command "echo FIRST-BATCH")
-    (upesp+:test-wait (lambda () (not (upesp+:shell-live-p))) 10)
-    ;; Second batch after shell has closed
-    (upesp+:async-shell-command "echo SECOND-BATCH")
+    (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
+    (let ((first-proc upesp+:shell-process))
+      ;; Submit second batch while shell is still alive; timer should be cancelled.
+      (upesp+:async-shell-command "echo SECOND-BATCH")
+      (should
+       (upesp+:test-wait
+        (lambda ()
+          (string-match "SECOND-BATCH" (or (upesp+:test-shell-output) "")))
+        10))
+      ;; Same shell process must have been reused.
+      (should (eq first-proc upesp+:shell-process)))))
+
+(ert-deftest upesp+:func/shell-terminated-after-scheduled-finalize ()
+  "Shell is terminated when the finalize timer is expired."
+  (upesp+:func-with-clean-state
+    (upesp+:async-shell-command "echo drain-test")
+    (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
     (should
      (upesp+:test-wait
-      (lambda ()
-        (string-match "SECOND-BATCH" (or (upesp+:test-shell-output) "")))
-      10))))
+      (lambda () (null upesp+:shell-process-terminate-timer)) 20))
+    (should (not (upesp+:shell-live-p)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Sentinel mechanism
-
-(ert-deftest upesp+:func/sentinel-counter-increments ()
-  "Each dispatched command increments the sentinel counter."
-  (upesp+:func-with-clean-state
-    (let ((before upesp+:sentinel-counter))
-      (upesp+:async-shell-command "echo sentinel-count-test")
-      (upesp+:test-wait (lambda () (> upesp+:sentinel-counter before)) 5)
-      (should (> upesp+:sentinel-counter before)))))
+;;; Shell prompt detection
 
 (ert-deftest upesp+:func/occupied-cleared-after-command ()
   "command-occupied is nil once a command finishes."

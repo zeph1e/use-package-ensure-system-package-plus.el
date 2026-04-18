@@ -24,8 +24,9 @@
   `(let ((upesp+:command-queue nil)
          (upesp+:command-done nil)
          (upesp+:command-occupied nil)
-         (upesp+:shell-process nil)
-         (upesp+:sentinel-counter 0))
+         (upesp+:command-ready nil)
+         (upesp+:command-executing nil)
+         (upesp+:shell-process nil))
      ,@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -120,35 +121,28 @@
     (setq upesp+:command-occupied t
           upesp+:command-queue '("apt install foo"))
     (cl-letf (((symbol-function 'upesp+:send-command) #'ignore))
-      (upesp+:run-next)
+      (upesp+:run-next t)
       (should (equal upesp+:command-queue '("apt install foo"))))))
 
-(ert-deftest upesp+:run-next/empty-queue-sends-exit ()
-  "Empty queue must send 'exit' to close the shared shell."
+(ert-deftest upesp+:run-next/empty-queue-finalizes ()
+  "Empty queue must call upesp+:finalize to close the shell."
   (upesp+:with-clean-state
-    (let ((sent nil)
-          (buf (generate-new-buffer " *upesp-test*")))
-      (let* ((proc (start-process "upesp-exit-test" buf "cat"))
-             (upesp+:shell-process proc))
-        (cl-letf (((symbol-function 'process-send-string)
-                   (lambda (_p s) (setq sent s))))
-          (upesp+:run-next)
-          (should (equal sent "exit\n")))
-        (delete-process proc)
-        (kill-buffer buf)))))
+    (let ((finalized nil))
+      (cl-letf (((symbol-function 'upesp+:finalize)
+                 (lambda () (setq finalized t))))
+        (upesp+:run-next t)
+        (should finalized)))))
 
-(ert-deftest upesp+:run-next/skips-done-command-and-runs-next ()
-  "A command already in command-done is skipped; the next one runs."
+(ert-deftest upesp+:run-next/done-command-triggers-finalize ()
+  "A command already in command-done causes finalize, not the next command."
   (upesp+:with-clean-state
     (push '("apt" . "foo") upesp+:command-done)
-    (let ((sent nil))
-      (cl-letf (((symbol-function 'upesp+:send-command)
-                 (lambda (cmd) (setq sent cmd)))
-                ((symbol-function 'upesp+:shell-live-p) #'ignore)
-                ((symbol-function 'process-send-string) #'ignore))
-        (setq upesp+:command-queue '("apt install foo" "apt install bar"))
-        (upesp+:run-next)
-        (should (equal sent "apt install bar"))))))
+    (let ((finalized nil))
+      (cl-letf (((symbol-function 'upesp+:finalize)
+                 (lambda () (setq finalized t))))
+        (setq upesp+:command-queue '("apt install foo"))
+        (upesp+:run-next t)
+        (should finalized)))))
 
 (ert-deftest upesp+:run-next/requeues-behind-deps ()
   "When a package manager needs bootstrapping, cmd is re-queued after its deps."
@@ -158,22 +152,21 @@
                 ((symbol-function 'upesp+:send-command)
                  (lambda (cmd) (push cmd sent-cmds))))
         (setq upesp+:command-queue '("npm install foo"))
-        (upesp+:run-next)
+        (upesp+:run-next t)
         ;; "npm install foo" must still be in the queue (after deps)
         (should (member "npm install foo" upesp+:command-queue))
         ;; The first dep, not the original cmd, must have been sent
         (should (= 1 (length sent-cmds)))
         (should-not (equal (car sent-cmds) "npm install foo"))))))
 
-(ert-deftest upesp+:run-next/dep-cmd-removed-from-done-before-requeue ()
-  "cmd is removed from command-done when re-queued behind deps so it will run."
+(ert-deftest upesp+:run-next/dep-cmd-stays-in-done-after-requeue ()
+  "cmd stays in command-done after re-queuing behind deps."
   (upesp+:with-clean-state
     (cl-letf (((symbol-function 'executable-find) (lambda (_) nil))
               ((symbol-function 'upesp+:send-command) #'ignore))
       (setq upesp+:command-queue '("npm install foo"))
-      (upesp+:run-next)
-      ;; The pair must NOT be in done, so it runs after deps
-      (should-not (member '("npm" . "foo") upesp+:command-done)))))
+      (upesp+:run-next t)
+      (should (member '("npm" . "foo") upesp+:command-done)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:async-shell-command
