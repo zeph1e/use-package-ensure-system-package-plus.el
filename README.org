@@ -57,7 +57,9 @@ git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
   ~/.emacs.d/plugins/use-package-ensure-system-package+
 #+end_src
 
-Then require it after =use-package= and =use-package-ensure-system-package=:
+Then require it early in your =init.el=, after =use-package= and
+=use-package-ensure-system-package= are loaded but before any =use-package=
+forms that use =:ensure-system-package=:
 
 #+begin_src emacs-lisp
 (require 'use-package-ensure-system-package+)
