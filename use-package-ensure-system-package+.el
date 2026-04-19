@@ -19,6 +19,9 @@
 (defvar upesp+:command-done nil
   "Alist of (package-manager . package) pairs already executed.")
 
+(defvar upesp+:package-manager-bootstrapped nil
+  "List of package managers whose bootstrap commands have been enqueued.")
+
 (defvar upesp+:command-occupied nil
   "Non-nil while waiting for the current command to finish.")
 
@@ -34,7 +37,20 @@
     ("npm" . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
               "source ~/.nvm/nvm.sh"
               "nvm install --lts"))
-    ("pip" . ("sudo apt install -y python3-pip")))
+    ("pip" . ("sudo apt install -y build-essential"
+              "sudo apt install -y zlib1g-dev"
+              "sudo apt install -y libncurses5-dev"
+              "sudo apt install -y libgdbm-dev"
+              "sudo apt install -y libnss3-dev"
+              "sudo apt install -y libssl-dev"
+              "sudo apt install -y libreadline-dev"
+              "sudo apt install -y libffi-dev"
+              "sudo apt install -y wget"
+              "curl -fsSL https://pyenv.run | bash"
+              "echo 'export PYENV_ROOT=\"$HOME/.pyenv\"' >> ~/.bashrc"
+              "echo '[[ -d $PYENV_ROOT/bin ]] && export PATH=\"$PYENV_ROOT/bin:$PATH\"' >> ~/.bashrc"
+              "echo 'eval \"$(pyenv init - bash)\"' >> ~/.bashrc"
+              "export PATH=\"$HOME/.pyenv/bin:$PATH\"")))
   "Bootstrap commands needed before a package manager can be used."
   :group 'upesp+
   :type 'alist)
@@ -66,7 +82,8 @@
    (t nil)))
 
 (defun upesp+:get-package-manager-deps (package-manager)
-  (unless (and (stringp package-manager) (executable-find package-manager))
+  (unless (or (member package-manager upesp+:package-manager-bootstrapped)
+              (and (stringp package-manager) (executable-find package-manager)))
     (cdr (assoc package-manager upesp+:package-manager-deps))))
 
 (defun upesp+:shell-live-p ()
@@ -162,8 +179,13 @@
           (if (and cmd pkg)
               (progn
                 (when deps
-                  ;; there's some dependencies to be resolved
-                  (push cmd upesp+:command-queue)  ; push current command again
+                  ;; Bootstrap the package manager first.
+                  ;; Mark as bootstrapped and undo the premature command-done
+                  ;; entry so the original command runs after deps complete.
+                  (push (car pkg) upesp+:package-manager-bootstrapped)
+                  (setq upesp+:command-done
+                        (cl-remove pkg upesp+:command-done :test #'equal))
+                  (push cmd upesp+:command-queue)
                   (setq cmd (car deps))
                   (setq upesp+:command-queue (append (cdr deps)
                                                      upesp+:command-queue)))
