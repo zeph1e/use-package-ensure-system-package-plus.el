@@ -47,6 +47,11 @@
 (defvar upesp+:shell-process nil
   "The single persistent shell process used for all installs.")
 
+(defcustom upesp+:shell-process-expiry 360
+  "Timeout for the installer shell-process termination."
+  :group 'upesp+
+  :type 'integer)
+
 (defvar upesp+:shell-process-terminate-timer nil
   "Timer handle for shell-process termination.")
 
@@ -145,7 +150,7 @@
 
 (defun upesp+:finalize ()
   (setq upesp+:shell-process-terminate-timer
-        (run-with-timer 10 nil #'upesp+:finalize-now)))
+        (run-with-timer upesp+:shell-process-expiry nil #'upesp+:finalize-now)))
 
 (defun upesp+:finalize-now ()
   ;; (message "killing buffer")

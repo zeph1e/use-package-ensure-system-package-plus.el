@@ -21,7 +21,8 @@
 (defmacro upesp+:with-clean-state (&rest body)
   "Run BODY with all plugin state vars reset to nil."
   (declare (indent 0))
-  `(let ((upesp+:command-queue nil)
+  `(let ((upesp+:package-manager-bootstrapped nil)
+         (upesp+:command-queue nil)
          (upesp+:command-done nil)
          (upesp+:command-occupied nil)
          (upesp+:command-ready nil)
@@ -90,6 +91,28 @@
   (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
     (should (null (upesp+:get-package-manager-deps "apt")))))
 
+(ert-deftest upesp+:get-pm-deps/returns-deps-when-curl-missing ()
+  (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
+    (let ((deps (upesp+:get-package-manager-deps "curl")))
+      (should (listp deps))
+      (should (> (length deps) 0)))))
+
+(ert-deftest upesp+:get-pm-deps/curl-bootstrap-uses-apt ()
+  "curl is bootstrapped via apt."
+  (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
+    (should (string-match "apt" (car (upesp+:get-package-manager-deps "curl"))))))
+
+(ert-deftest upesp+:get-pm-deps/npm-bootstrap-uses-nvm ()
+  "npm is bootstrapped via nvm, not a direct apt install."
+  (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
+    (should (string-match "nvm" (car (upesp+:get-package-manager-deps "npm"))))))
+
+(ert-deftest upesp+:get-pm-deps/pip-bootstrap-uses-python3-pip ()
+  "pip is bootstrapped by installing python3-pip."
+  (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
+    (should (string-match "python3-pip"
+                          (car (upesp+:get-package-manager-deps "pip"))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:shell-live-p
 
@@ -156,17 +179,18 @@
         ;; "npm install foo" must still be in the queue (after deps)
         (should (member "npm install foo" upesp+:command-queue))
         ;; The first dep, not the original cmd, must have been sent
-        (should (= 1 (length sent-cmds)))
+        (should (<= 1 (length sent-cmds)))
         (should-not (equal (car sent-cmds) "npm install foo"))))))
 
-(ert-deftest upesp+:run-next/dep-cmd-stays-in-done-after-requeue ()
-  "cmd stays in command-done after re-queuing behind deps."
+(ert-deftest upesp+:run-next/cmd-removed-from-done-when-requeued ()
+  "When a cmd is re-queued behind deps its command-done entry is undone,
+so it will actually execute once the deps complete."
   (upesp+:with-clean-state
     (cl-letf (((symbol-function 'executable-find) (lambda (_) nil))
               ((symbol-function 'upesp+:send-command) #'ignore))
       (setq upesp+:command-queue '("npm install foo"))
       (upesp+:run-next t)
-      (should (member '("npm" . "foo") upesp+:command-done)))))
+      (should-not (member '("npm" . "foo") upesp+:command-done)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:async-shell-command

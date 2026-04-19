@@ -164,12 +164,13 @@ Returns the predicate value or nil on timeout."
 (ert-deftest upesp+:func/shell-terminated-after-scheduled-finalize ()
   "Shell is terminated when the finalize timer is expired."
   (upesp+:func-with-clean-state
-    (upesp+:async-shell-command "echo drain-test")
-    (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
-    (should
-     (upesp+:test-wait
-      (lambda () (null upesp+:shell-process-terminate-timer)) 20))
-    (should (not (upesp+:shell-live-p)))))
+   (let ((upesp+:shell-process-expiry 5))
+     (upesp+:async-shell-command "echo drain-test")
+     (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
+     (should
+      (upesp+:test-wait
+       (lambda () (null upesp+:shell-process-terminate-timer)) 10))
+     (should (not (upesp+:shell-live-p))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Shell prompt detection
