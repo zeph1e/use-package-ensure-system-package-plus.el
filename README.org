@@ -1,6 +1,7 @@
 #+title: use-package-ensure-system-package+
 #+author: Yunsik Jang
 #+email: z3ph1e@gmail.com
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/html-theme-readtheorg.setup
 
 An Emacs package that improves [[https://github.com/jwiegley/use-package][use-package]]'s =:ensure-system-package= keyword by
 running all system package installations through a *single shared shell session*,
@@ -92,11 +93,12 @@ once.
 If a package manager itself is missing, it is installed automatically before
 its packages are queued:
 
-| Package manager | Bootstrap commands                                          |
-|-----------------+-------------------------------------------------------------|
-| =apt=           | /(assumed present)/                                         |
-| =npm=           | =sudo apt install -y npm= → =npm config set prefix ~/.local= |
-| =pip=           | =sudo apt install -y pip3=                                  |
+| Package manager | Bootstrap commands             |
+|-----------------+--------------------------------|
+| =apt=           | /(assumed present)/            |
+| =curl=          | =sudo apt install -y curl=     |
+| =npm=           | /(installs nvm & lts nodejs)/  |
+| =pip=           | =sudo apt install python3-pip= |
 
 To add more package managers, extend =upesp+:package-manager-deps=:
 
