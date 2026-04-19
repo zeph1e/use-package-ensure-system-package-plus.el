@@ -37,20 +37,7 @@
     ("npm" . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
               "source ~/.nvm/nvm.sh"
               "nvm install --lts"))
-    ("pip" . ("sudo apt install -y build-essential"
-              "sudo apt install -y zlib1g-dev"
-              "sudo apt install -y libncurses5-dev"
-              "sudo apt install -y libgdbm-dev"
-              "sudo apt install -y libnss3-dev"
-              "sudo apt install -y libssl-dev"
-              "sudo apt install -y libreadline-dev"
-              "sudo apt install -y libffi-dev"
-              "sudo apt install -y wget"
-              "curl -fsSL https://pyenv.run | bash"
-              "echo 'export PYENV_ROOT=\"$HOME/.pyenv\"' >> ~/.bashrc"
-              "echo '[[ -d $PYENV_ROOT/bin ]] && export PATH=\"$PYENV_ROOT/bin:$PATH\"' >> ~/.bashrc"
-              "echo 'eval \"$(pyenv init - bash)\"' >> ~/.bashrc"
-              "export PATH=\"$HOME/.pyenv/bin:$PATH\"")))
+    ("pip" . ("sudo apt install python3-pip")))
   "Bootstrap commands needed before a package manager can be used."
   :group 'upesp+
   :type 'alist)
