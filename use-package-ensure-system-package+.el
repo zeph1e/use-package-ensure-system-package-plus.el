@@ -28,11 +28,16 @@
 (defvar upesp+:command-executing nil
   "Non-nil when executing command in shell.")
 
-(defconst upesp+:package-manager-deps
+(defcustom upesp+:package-manager-deps
   `(("apt" . nil)
-    ("npm" . ("sudo apt install -y npm" "npm config set prefix ~/.local"))
-    ("pip" . ("sudo apt install -y pip3")))
-  "Bootstrap commands needed before a package manager can be used.")
+    ("curl" . ("sudo apt install -y curl"))
+    ("npm" . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
+              "source ~/.nvm/nvm.sh"
+              "nvm install --lts"))
+    ("pip" . ("sudo apt install -y python3-pip")))
+  "Bootstrap commands needed before a package manager can be used."
+  :group 'upesp+
+  :type 'alist)
 
 ;;; Shared shell process
 
@@ -93,7 +98,7 @@
 
 (defun upesp+:watch-for-shell-prompt (string)
   (let ((case-fold-search t))
-    (string-match (concat "^" upesp+:shell-prompt)
+    (string-match upesp+:shell-prompt
                   (string-replace "\r" "" string))))
 
 (defun upesp+:process-filter (proc output)
