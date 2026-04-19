@@ -91,7 +91,8 @@ once.
 * Package Manager Bootstrap
 
 If a package manager itself is missing, it is installed automatically before
-its packages are queued:
+its packages are queued.  The bootstrap rules are stored in the customizable
+variable ~upesp+:package-manager-deps~:
 
 | Package manager | Bootstrap commands             |
 |-----------------+--------------------------------|
@@ -100,11 +101,13 @@ its packages are queued:
 | =npm=           | /(installs nvm & lts nodejs)/  |
 | =pip=           | =sudo apt install python3-pip= |
 
-To add more package managers, extend =upesp+:package-manager-deps=:
+To add or override entries, customize the variable or extend it in your
+=init.el=:
 
 #+begin_src emacs-lisp
-(add-to-list 'upesp+:package-manager-deps
-             '("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y")))
+(customize-set-variable 'upesp+:package-manager-deps
+  (append upesp+:package-manager-deps
+          '(("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y")))))
 #+end_src
 
 * Running the Tests
