@@ -101,7 +101,10 @@
     (with-current-buffer buf
       (goto-char (point-max))
       ;; (message "output: %S" output)
-      (cond ((comint-watch-for-password-prompt output))
+      (cond ((comint-watch-for-password-prompt output)
+             (insert output)
+             (display-buffer (process-buffer proc)
+                             '(display-buffer-pop-up-window)))
             ((upesp+:watch-for-shell-prompt output)
              (setq upesp+:command-ready t)
              (when upesp+:command-executing
