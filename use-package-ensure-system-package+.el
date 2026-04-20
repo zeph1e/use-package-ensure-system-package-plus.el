@@ -59,6 +59,12 @@
 
 (defconst upesp+:shell-prompt "upesp_plus_prompt$ ")
 
+(defcustom upesp+:command-executed-hook nil
+  "Hook run when a command was executed."
+  :group 'upesp+
+  :type '(repeat function))
+
+
 (defun upesp+:command-need-execute (command)
   (cond
    ((stringp command)
@@ -122,6 +128,8 @@
             ((upesp+:watch-for-shell-prompt output)
              (setq upesp+:command-ready t)
              (when upesp+:command-executing
+               (run-hook-with-args 'upesp+:command-executed-hook
+                                   upesp+:command-executing)
                (setq upesp+:command-occupied nil
                      upesp+:command-executing nil)
                (upesp+:run-next)))
@@ -139,9 +147,8 @@
     ;; (display-buffer (process-buffer proc) '(display-buffer-pop-up-window))
     (if upesp+:command-ready
         (progn
-          ;; (message "sending cmd: %S" cmd)
           (setq upesp+:command-ready nil
-                upesp+:command-executing t)
+                upesp+:command-executing cmd)
           (with-current-buffer (process-buffer proc)
             (insert (format "Executing command : %S\n" cmd)))
           ;; (message "executing command: %S" cmd)
