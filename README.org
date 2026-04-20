@@ -31,9 +31,9 @@ This package advises =use-package-ensure-system-package-consify= to replace
 4. Handles =sudo= password prompts transparently through =comint=.
 5. Automatically bootstraps missing package managers (e.g. installs =npm= via
    =apt= before running an =npm install=).
-6. When the queue drains, schedules the shell to close after a 10-second idle
-   timeout.  If new commands arrive before the timeout, the existing shell is
-   reused without restarting.
+6. When the queue drains, schedules the shell to close after an idle timeout
+   (default 360 seconds).  If new commands arrive before the timeout fires,
+   the existing shell is reused without restarting.
 
 Because all commands share one shell, =sudo='s credential cache persists across
 the entire batch — you type your password once.
@@ -131,6 +131,22 @@ assumed-present system package manager:
 
 The =npm= bootstrap still uses =curl= and =nvm=, so it works unchanged on any
 distribution once =curl= is available.
+
+* Shell Expiry Timeout
+
+After the install queue drains, the shell process is kept alive for
+~upesp+:shell-process-expiry~ seconds (default: =360=) before being closed.
+Keeping it alive lets subsequent =:ensure-system-package= declarations reuse
+the same session — and the same =sudo= credential cache — without spawning a
+new shell.
+
+Shorten the timeout if you prefer the installer buffer to disappear sooner:
+
+#+begin_src emacs-lisp
+(use-package use-package-ensure-system-package+
+  :custom
+  (upesp+:shell-process-expiry 60))   ; close shell 60 s after queue drains
+#+end_src
 
 * Post-install Hook
 
