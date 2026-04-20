@@ -111,6 +111,27 @@ To add or override entries, use =:custom= in the =use-package= declaration:
            '(("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y"))))))
 #+end_src
 
+** Red Hat / Fedora
+
+The defaults assume a Debian/Ubuntu system.  On Red Hat, Fedora, or any
+=dnf=-based distribution, replace the list entirely with =dnf= as the
+assumed-present system package manager:
+
+#+begin_src emacs-lisp
+(use-package use-package-ensure-system-package+
+  :custom
+  (upesp+:package-manager-deps
+   '(("dnf"  . nil)
+     ("curl" . ("sudo dnf install -y curl"))
+     ("npm"  . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
+                "source ~/.nvm/nvm.sh"
+                "nvm install --lts"))
+     ("pip"  . ("sudo dnf install -y python3-pip")))))
+#+end_src
+
+The =npm= bootstrap still uses =curl= and =nvm=, so it works unchanged on any
+distribution once =curl= is available.
+
 * Post-install Hook
 
 ~upesp+:command-executed-hook~ is called after each command finishes, with the
