@@ -23,7 +23,6 @@
   (declare (indent 0))
   `(let ((upesp+:package-manager-bootstrapped nil)
          (upesp+:command-queue nil)
-         (upesp+:command-done nil)
          (upesp+:command-occupied nil)
          (upesp+:command-ready nil)
          (upesp+:command-executing nil)
@@ -31,43 +30,32 @@
      ,@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; upesp+:command-need-execute
+;;; upesp+:get-package-manager
 
-(ert-deftest upesp+:command-need-execute/returns-pair-for-new-string ()
+(ert-deftest upesp+:get-package-manager/returns-package-manager-string ()
   (upesp+:with-clean-state
-    (should (equal '("apt" . "foo")
-                   (upesp+:command-need-execute "apt install foo")))))
+    (should (equal "apt" (upesp+:get-package-manager "apt install foo")))))
 
-(ert-deftest upesp+:command-need-execute/strips-sudo ()
+(ert-deftest upesp+:get-package-manager/strips-sudo ()
   (upesp+:with-clean-state
-    (should (equal '("apt" . "foo")
-                   (upesp+:command-need-execute "sudo apt install foo")))))
+    (should (equal "apt" (upesp+:get-package-manager "sudo apt install foo")))))
 
-(ert-deftest upesp+:command-need-execute/returns-nil-on-duplicate ()
+(ert-deftest upesp+:get-package-manager/accepts-list-form ()
   (upesp+:with-clean-state
-    (upesp+:command-need-execute "apt install foo")
-    (should (null (upesp+:command-need-execute "apt install foo")))))
+    (should (equal "apt"
+                   (upesp+:get-package-manager '("apt" "install" "foo"))))))
 
-(ert-deftest upesp+:command-need-execute/adds-to-done ()
+(ert-deftest upesp+:get-package-manager/list-with-sudo ()
   (upesp+:with-clean-state
-    (upesp+:command-need-execute "npm install bar")
-    (should (member '("npm" . "bar") upesp+:command-done))))
+    (should (equal "apt"
+                   (upesp+:get-package-manager '("sudo" "apt" "install" "foo"))))))
 
-(ert-deftest upesp+:command-need-execute/accepts-list-form ()
+(ert-deftest upesp+:get-package-manager/allow-redundancy ()
+  "Always return package manager name regardless of the redundancy."
   (upesp+:with-clean-state
-    (should (equal '("apt" . "foo")
-                   (upesp+:command-need-execute '("apt" "install" "foo"))))))
+    (should (upesp+:get-package-manager "apt install foo"))
+    (should (upesp+:get-package-manager "apt install foo"))))
 
-(ert-deftest upesp+:command-need-execute/list-with-sudo ()
-  (upesp+:with-clean-state
-    (should (equal '("apt" . "foo")
-                   (upesp+:command-need-execute '("sudo" "apt" "install" "foo"))))))
-
-(ert-deftest upesp+:command-need-execute/distinct-packages-both-run ()
-  "Two different packages under the same manager both get pairs."
-  (upesp+:with-clean-state
-    (should (upesp+:command-need-execute "apt install foo"))
-    (should (upesp+:command-need-execute "apt install bar"))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:get-package-manager-deps
@@ -156,17 +144,6 @@
         (upesp+:run-next t)
         (should finalized)))))
 
-(ert-deftest upesp+:run-next/done-command-triggers-finalize ()
-  "A command already in command-done causes finalize, not the next command."
-  (upesp+:with-clean-state
-    (push '("apt" . "foo") upesp+:command-done)
-    (let ((finalized nil))
-      (cl-letf (((symbol-function 'upesp+:finalize)
-                 (lambda () (setq finalized t))))
-        (setq upesp+:command-queue '("apt install foo"))
-        (upesp+:run-next t)
-        (should finalized)))))
-
 (ert-deftest upesp+:run-next/requeues-behind-deps ()
   "When a package manager needs bootstrapping, cmd is re-queued after its deps."
   (upesp+:with-clean-state
@@ -181,16 +158,6 @@
         ;; The first dep, not the original cmd, must have been sent
         (should (<= 1 (length sent-cmds)))
         (should-not (equal (car sent-cmds) "npm install foo"))))))
-
-(ert-deftest upesp+:run-next/cmd-removed-from-done-when-requeued ()
-  "When a cmd is re-queued behind deps its command-done entry is undone,
-so it will actually execute once the deps complete."
-  (upesp+:with-clean-state
-    (cl-letf (((symbol-function 'executable-find) (lambda (_) nil))
-              ((symbol-function 'upesp+:send-command) #'ignore))
-      (setq upesp+:command-queue '("npm install foo"))
-      (upesp+:run-next t)
-      (should-not (member '("npm" . "foo") upesp+:command-done)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:async-shell-command

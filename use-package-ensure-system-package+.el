@@ -16,9 +16,6 @@
 (defvar upesp+:command-queue nil
   "Queue of install commands to run sequentially.")
 
-(defvar upesp+:command-done nil
-  "Alist of (package-manager . package) pairs already executed.")
-
 (defvar upesp+:package-manager-bootstrapped nil
   "List of package managers whose bootstrap commands have been enqueued.")
 
@@ -65,19 +62,15 @@
   :type '(repeat function))
 
 
-(defun upesp+:command-need-execute (command)
+(defun upesp+:get-package-manager (command)
   (cond
    ((stringp command)
-    (upesp+:command-need-execute (split-string-shell-command command)))
+    (upesp+:get-package-manager (split-string-shell-command command)))
    ((listp command)
-    (if (and (stringp (car command)) (string= (car command) "sudo"))
-        (upesp+:command-need-execute (cdr command))
-      (let* ((pair (cons (car command) (car (last command))))
-             (found (car (member pair upesp+:command-done))))
-        (unless found
-          (push pair upesp+:command-done)
-          pair))))
-   (t nil)))
+    (let ((pkgmgr (car command)))
+      (if (and (stringp pkgmgr) (string= pkgmgr "sudo"))
+          (upesp+:get-package-manager (cdr command))
+        pkgmgr)))))
 
 (defun upesp+:get-package-manager-deps (package-manager)
   (unless (or (member package-manager upesp+:package-manager-bootstrapped)
@@ -128,12 +121,12 @@
             ((upesp+:watch-for-shell-prompt output)
              (setq upesp+:command-ready t)
              (when upesp+:command-executing
-               (run-hook-with-args 'upesp+:command-executed-hook
-                                   upesp+:command-executing)
-               (setq upesp+:command-occupied nil
-                     upesp+:command-executing nil)
+               (let ((executed-cmd upesp+:command-executing))
+                 (setq upesp+:command-occupied nil
+                       upesp+:command-executing nil)
+                 (run-hook-with-args 'upesp+:command-executed-hook executed-cmd))
                (upesp+:run-next)))
-            (t (ansi-color-apply (insert output)))))))
+            (t (insert (ansi-color-apply output)))))))
 
 (defun upesp+:process-sentinel (proc _event)
   (unless (process-live-p proc)
@@ -172,18 +165,15 @@
    (t (unless upesp+:command-occupied
         (setq upesp+:command-occupied t)
         (let* ((cmd (pop upesp+:command-queue))
-               (pkg (upesp+:command-need-execute cmd))
-               (deps (and pkg (upesp+:get-package-manager-deps (car pkg)))))
+               (pkgmgr (upesp+:get-package-manager cmd))
+               (deps (and pkgmgr (upesp+:get-package-manager-deps pkgmgr))))
           ;; (message "cmd: %S, pkg: %S, deps: %S" cmd pkg deps)
-          (if (and cmd pkg)
+          (if (and cmd pkgmgr)
               (progn
                 (when deps
-                  ;; Bootstrap the package manager first.
-                  ;; Mark as bootstrapped and undo the premature command-done
+                  ;; Bootstrap the package manager first and mark it.
                   ;; entry so the original command runs after deps complete.
-                  (push (car pkg) upesp+:package-manager-bootstrapped)
-                  (setq upesp+:command-done
-                        (cl-remove pkg upesp+:command-done :test #'equal))
+                  (push pkgmgr upesp+:package-manager-bootstrapped)
                   (push cmd upesp+:command-queue)
                   (setq cmd (car deps))
                   (setq upesp+:command-queue (append (cdr deps)
