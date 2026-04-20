@@ -101,6 +101,13 @@
     (should (string-match "python3-pip"
                           (car (upesp+:get-package-manager-deps "pip"))))))
 
+(ert-deftest upesp+:get-pm-deps/returns-nil-when-already-bootstrapped ()
+  "Once a manager is in bootstrapped list, no deps returned even if missing."
+  (upesp+:with-clean-state
+    (cl-letf (((symbol-function 'executable-find) (lambda (_) nil)))
+      (let ((upesp+:package-manager-bootstrapped '("npm")))
+        (should (null (upesp+:get-package-manager-deps "npm")))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:shell-live-p
 
@@ -158,6 +165,70 @@
         ;; The first dep, not the original cmd, must have been sent
         (should (<= 1 (length sent-cmds)))
         (should-not (equal (car sent-cmds) "npm install foo"))))))
+
+(ert-deftest upesp+:run-next/sets-bootstrapped-flag-when-requeuing ()
+  "Manager is pushed to bootstrapped list when its deps are prepended."
+  (upesp+:with-clean-state
+    (cl-letf (((symbol-function 'executable-find) (lambda (_) nil))
+              ((symbol-function 'upesp+:send-command) #'ignore))
+      (setq upesp+:command-queue '("npm install foo"))
+      (upesp+:run-next t)
+      (should (member "npm" upesp+:package-manager-bootstrapped)))))
+
+(ert-deftest upesp+:run-next/bootstrapped-manager-sends-directly ()
+  "When manager is already bootstrapped, original cmd is sent without requeuing."
+  (upesp+:with-clean-state
+    (let ((sent nil))
+      (cl-letf (((symbol-function 'executable-find) (lambda (_) nil))
+                ((symbol-function 'upesp+:send-command)
+                 (lambda (cmd) (setq sent cmd))))
+        (setq upesp+:package-manager-bootstrapped '("npm")
+              upesp+:command-queue '("npm install foo"))
+        (upesp+:run-next t)
+        (should (equal sent "npm install foo"))
+        (should (null upesp+:command-queue))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; upesp+:process-filter / upesp+:command-executed-hook
+
+(ert-deftest upesp+:process-filter/hook-fires-with-command-string ()
+  "command-executed-hook receives the command string that was executing."
+  (upesp+:with-clean-state
+    (let* ((received nil)
+           (upesp+:command-executing "apt install foo")
+           (hook-fn (lambda (cmd) (setq received cmd))))
+      (add-hook 'upesp+:command-executed-hook hook-fn)
+      (unwind-protect
+          (with-temp-buffer
+            (cl-letf (((symbol-function 'process-buffer) (lambda (_) (current-buffer)))
+                      ((symbol-function 'comint-watch-for-password-prompt) (lambda (_) nil))
+                      ((symbol-function 'upesp+:watch-for-shell-prompt) (lambda (_) t))
+                      ((symbol-function 'upesp+:run-next) #'ignore))
+              (upesp+:process-filter nil "anything")
+              (should (equal received "apt install foo"))))
+        (remove-hook 'upesp+:command-executed-hook hook-fn)))))
+
+(ert-deftest upesp+:process-filter/state-cleared-before-hook ()
+  "command-occupied and command-executing are nil when the hook fires."
+  (upesp+:with-clean-state
+    (let* ((occupied-in-hook :unset)
+           (executing-in-hook :unset)
+           (upesp+:command-executing "apt install foo")
+           (upesp+:command-occupied t)
+           (hook-fn (lambda (_cmd)
+                      (setq occupied-in-hook upesp+:command-occupied
+                            executing-in-hook upesp+:command-executing))))
+      (add-hook 'upesp+:command-executed-hook hook-fn)
+      (unwind-protect
+          (with-temp-buffer
+            (cl-letf (((symbol-function 'process-buffer) (lambda (_) (current-buffer)))
+                      ((symbol-function 'comint-watch-for-password-prompt) (lambda (_) nil))
+                      ((symbol-function 'upesp+:watch-for-shell-prompt) (lambda (_) t))
+                      ((symbol-function 'upesp+:run-next) #'ignore))
+              (upesp+:process-filter nil "anything")
+              (should (null occupied-in-hook))
+              (should (null executing-in-hook))))
+        (remove-hook 'upesp+:command-executed-hook hook-fn)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:async-shell-command

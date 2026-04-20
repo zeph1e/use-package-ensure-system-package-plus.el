@@ -182,4 +182,39 @@ Returns the predicate value or nil on timeout."
     (should
      (upesp+:test-wait (lambda () (not upesp+:command-occupied)) 10))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; upesp+:command-executed-hook
+
+(ert-deftest upesp+:func/hook-called-for-each-command ()
+  "command-executed-hook fires once per completed command with the cmd string."
+  (upesp+:func-with-clean-state
+    (let* ((executed nil)
+           (hook-fn (lambda (cmd) (push cmd executed))))
+      (add-hook 'upesp+:command-executed-hook hook-fn)
+      (unwind-protect
+          (progn
+            (upesp+:async-shell-command "echo HOOK-A")
+            (upesp+:async-shell-command "echo HOOK-B")
+            (upesp+:test-wait (lambda () (= (length executed) 2)) 10)
+            (should (member "echo HOOK-A" executed))
+            (should (member "echo HOOK-B" executed)))
+        (remove-hook 'upesp+:command-executed-hook hook-fn)))))
+
+(ert-deftest upesp+:func/same-command-reruns-after-completion ()
+  "Submitting the same command after it has run executes it again."
+  (upesp+:func-with-clean-state
+    (when-let ((buf (get-buffer upesp+:shell-buffer))) (kill-buffer buf))
+    (upesp+:async-shell-command "echo RERUN-MARKER")
+    ;; Wait for queue to drain before re-submitting.
+    (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
+    (upesp+:async-shell-command "echo RERUN-MARKER")
+    (upesp+:test-wait
+     (lambda ()
+       (let* ((out (or (upesp+:test-shell-output) ""))
+              (count (cl-count-if
+                      (lambda (line) (string-match "RERUN-MARKER" line))
+                      (split-string out "\n"))))
+         (= count 2)))
+     10)))
+
 ;;; test-functional.el ends here
