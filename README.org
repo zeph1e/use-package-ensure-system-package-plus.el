@@ -110,6 +110,23 @@ To add or override entries, customize the variable or extend it in your
           '(("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y")))))
 #+end_src
 
+* Post-install Hook
+
+~upesp+:command-executed-hook~ is called after each command finishes, with the
+completed command string as its argument.  Use it to react to specific
+installations — for example, to trigger a compilation step once a required
+system package is available:
+
+#+begin_src emacs-lisp
+(add-hook 'upesp+:command-executed-hook
+          (lambda (cmd)
+            (when (string-match-p "build-essential" cmd)
+              (my:recompile-native-module))))
+#+end_src
+
+The hook fires after the shell state is cleared, so it is safe to enqueue
+additional commands or call ~recursive-edit~ inside a hook function.
+
 * Running the Tests
 
 Unit and functional tests are written in ERT and live in the =test/= directory.
