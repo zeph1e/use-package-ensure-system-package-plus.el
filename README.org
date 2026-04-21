@@ -101,14 +101,16 @@ variable ~upesp+:package-manager-deps~:
 | =npm=           | /(installs nvm & lts nodejs)/  |
 | =pip=           | =sudo apt install python3-pip= |
 
-To add or override entries, use =:custom= in the =use-package= declaration:
+To override entries, either edit with =M-x customize-variable= or use =:custom=
+in the =use-package= declaration:
 
 #+begin_src emacs-lisp
-(use-package use-package-ensure-system-package+
-  :custom
-  (upesp+:package-manager-deps
-   (append upesp+:package-manager-deps
-           '(("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y"))))))
+  (use-package use-package-ensure-system-package+
+    :custom
+    (upesp+:package-manager-deps
+     '(("curl" . ("apt install -y curl"))
+       ("cargo" . ("curl https://sh.rustup.rs -sSf | sh -s -- -y"))
+       ("npm" . ("cargo install --locked cargo-npm")))))
 #+end_src
 
 ** Red Hat / Fedora
