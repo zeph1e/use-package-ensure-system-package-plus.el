@@ -112,12 +112,14 @@
 (defun upesp+:process-filter (proc output)
   (when-let ((buf (process-buffer proc)))
     (with-current-buffer buf
+      ;; show buffer when there's any output
+      (unless (get-buffer-window buf)
+        (display-buffer (process-buffer proc)
+                        '(display-buffer-pop-up-window)))
       (goto-char (point-max))
       ;; (message "output: %S" output)
       (cond ((comint-watch-for-password-prompt output)
-             (insert output)
-             (display-buffer (process-buffer proc)
-                             '(display-buffer-pop-up-window)))
+             (insert output))
             ((upesp+:watch-for-shell-prompt output)
              (setq upesp+:command-ready t)
              (when upesp+:command-executing
@@ -126,7 +128,46 @@
                        upesp+:command-executing nil)
                  (run-hook-with-args 'upesp+:command-executed-hook executed-cmd))
                (upesp+:run-next)))
-            (t (insert (ansi-color-apply output)))))))
+            (t
+             (let* ((clean-output (ansi-color-apply output))
+                    (len (length clean-output))
+                    (start 0))
+               ;; Chunk processing loop using regular expressions
+               (while (string-match "[\r\n]" clean-output start)
+                 (let* ((match (match-beginning 0))
+                        (char (aref clean-output match))
+                        (chunk-len (- match start)))
+                   ;; Step 1: Handle text block preceding the control character
+                   (when (> chunk-len 0)
+                     (let ((end-pos (+ (point) chunk-len))
+                           (line-end (line-end-position)))
+                       (if (< end-pos line-end)
+                           (progn
+                             (delete-char chunk-len)
+                             (insert (substring clean-output start match)))
+                         (let ((overwrite-len (- line-end (point))))
+                           (when (> overwrite-len 0)
+                             (delete-char overwrite-len))
+                           (insert (substring clean-output start match))))))
+                   ;; Step 2: Handle the specific control character
+                   (if (= char ?\r)
+                       (forward-line 0)
+                     (goto-char (line-end-position))
+                     (insert "\n"))
+                   (setq start (1+ match))))
+               ;; Step 3: Flush out any remaining trailing chunk data
+               (when (< start len)
+                 (let* ((chunk-len (- len start))
+                        (end-pos (+ (point) chunk-len))
+                        (line-end (line-end-position)))
+                   (if (< end-pos line-end)
+                       (progn
+                         (delete-char chunk-len)
+                         (insert (substring clean-output start)))
+                     (let ((overwrite-len (- line-end (point))))
+                       (when (> overwrite-len 0)
+                         (delete-char overwrite-len))
+                       (insert (substring clean-output start))))))))))))
 
 (defun upesp+:process-sentinel (proc _event)
   (unless (process-live-p proc)
