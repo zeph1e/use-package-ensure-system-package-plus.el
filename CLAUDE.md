@@ -31,11 +31,11 @@ The queue buffer, `*upesp+ queue*`, shows one row for each entry, in a `tabulate
 
 `upesp+:status-face` gives each status a face:
 
-- `waiting` — the row has no marker yet, so the row gets the `shadow` face, not a status face.
-- `installing` — the `bold` face.
-- `success` — the `success` face, green in the default theme.
-- `failed` — the `error` face, red in the default theme.
-- `cancelled` — the plain face. This status is a record, not a result that needs a warning color.
+- `waiting`: the row has no marker yet, so the row gets the `shadow` face, not a status face.
+- `installing`: the `bold` face.
+- `success`: the `success` face, green in the default theme.
+- `failed`: the `error` face, red in the default theme.
+- `cancelled`: the plain face. This status is a record, not a result that needs a warning color.
 
 The installer buffer, renamed for the running command through `upesp+:installer-buffer-name`, keeps every command's output for the whole session. It does not clear between commands. A dashed line separates each command's section from the one before it. `upesp+:finalize-now` is the only function that clears this buffer, when it kills the buffer at the end of a session.
 
@@ -45,11 +45,11 @@ Each command's `"Executing command"` line uses the `bold` face. Each result line
 
 `upesp+:queue-mode-map` gives the queue buffer these keys:
 
-- `q` — buries the buffer.
-- `n` / `p` — move to the next or previous row.
-- `RET` — jumps to the selected row's log, in the installer buffer.
-- `r` (`upesp+:queue-restart-command`) — resubmits a `cancelled` or `failed` row's command as a new row, through `upesp+:async-shell-command`.
-- `k` (`upesp+:queue-kill-command`) — interrupts the row that is currently `installing`.
+- `q`: buries the buffer.
+- `n` / `p`: move to the next or previous row.
+- `RET`: jumps to the selected row's log, in the installer buffer.
+- `r` (`upesp+:queue-restart-command`): resubmits a `cancelled` or `failed` row's command as a new row, through `upesp+:async-shell-command`.
+- `k` (`upesp+:queue-kill-command`): interrupts the row that is currently `installing`.
 
 ## Password Prompts and Cancellation
 
