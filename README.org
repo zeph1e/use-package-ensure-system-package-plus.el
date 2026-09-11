@@ -3,10 +3,10 @@
 #+email: z3ph1e@gmail.com
 #+SETUPFILE: https://fniessen.github.io/org-html-themes/org/html-theme-readtheorg.setup
 
-An Emacs package that improves [[https://github.com/jwiegley/use-package][use-package]]'s =:ensure-system-package= keyword by
-running all system package installations through a *single shared shell session*,
-so =sudo= only prompts for a password once per batch — with a live, color-coded
-queue buffer and installer log so you can see exactly what is happening.
+An Emacs package that improves [[https://github.com/jwiegley/use-package][use-package]]'s =:ensure-system-package= keyword. It runs
+all system package installations through a *single shared shell session*, so
+=sudo= only prompts for a password once per batch. A color-coded queue buffer
+and an installer log show you exactly what is happening.
 
 [[file:screenshots/overview.png]]
 
@@ -22,8 +22,9 @@ environment with many packages this means:
 
 - A separate shell process is spawned per install.
 - Each process that calls =sudo= prompts for your password independently.
-- Multiple package managers can run concurrently, causing race conditions
-  (e.g., two =apt install= processes locking =/var/lib/dpkg/lock= at once).
+- Multiple package managers can run at the same time, causing race
+  conditions. For example, two =apt install= processes can both try to
+  lock =/var/lib/dpkg/lock=.
 - There is no single place to see what ran, what is still running, and what
   failed.
 
@@ -38,24 +39,24 @@ This package advises =use-package-ensure-system-package-consify= to replace
    prompt so completion can be detected reliably.
 3. Sends commands to the shell one at a time via =process-send-string=, waiting
    for the shell prompt to appear before sending the next command.
-4. Handles =sudo= password prompts without blocking Emacs, and lets =C-g= cancel
-   a prompt cleanly (see [[*Cancelling and Restarting Installs][below]]).
-5. Automatically bootstraps missing package managers (e.g. installs =npm= via
-   =apt= before running an =npm install=).
+4. Handles =sudo= password prompts without blocking Emacs. =C-g= cancels a
+   prompt cleanly. See [[*Cancelling and Restarting Installs][Cancelling and Restarting Installs]].
+5. Bootstraps a missing package manager automatically. For example, it
+   installs =npm= through =apt= before it runs an =npm install=.
 6. Logs every command's output to the installer buffer, =*upesp+ installer*=,
-   without erasing what came before — the whole session's transcript stays
+   without erasing what came before. The whole session's transcript stays
    available, one command's section at a time, separated by a divider line.
 7. When the queue drains, schedules the shell to close after an idle timeout
    (default 360 seconds).  If new commands arrive before the timeout fires,
    the existing shell is reused without restarting.
 
 Because all commands share one shell, =sudo='s credential cache persists across
-the entire batch — you type your password once.
+the entire batch. You type your password once.
 
 * Queue and Installer Buffers
 
 Every queued command gets a row in the queue buffer and, once it starts, a
-section in the installer buffer. Both buffers pop up on their own; you do
+section in the installer buffer. Both buffers pop up on their own. You do
 not need to open them by hand.
 
 ** Reading the queue buffer
@@ -63,39 +64,39 @@ not need to open them by hand.
 Each row shows the package label, the package manager, and a status. The
 status also sets the row's color:
 
-| Status       | Meaning                                | Look             |
-|--------------+-----------------------------------------+------------------|
-| =waiting=      | Queued, not started yet                | gray             |
-| =installing=   | Running right now                      | bold             |
-| =success=      | Finished with exit code 0              | green            |
-| =failed=       | Finished with a non-zero exit code     | red              |
-| =cancelled=    | Interrupted by you (see below)         | plain            |
+| Status       | Meaning                               | Look  |
+|--------------+---------------------------------------+-------|
+| =waiting=    | Queued, not started yet               | gray  |
+| =installing= | Running right now                     | bold  |
+| =success=    | Finished with exit code 0             | green |
+| =failed=     | Finished with a non-zero exit code    | red   |
+| =cancelled=  | Interrupted by you, with =C-g= or =k= | plain |
 
 [[file:screenshots/queue-buffer.png]]
 
 ** Keys in the queue buffer
 
-| Key   | Command                        | Does                                                    |
-|-------+---------------------------------+----------------------------------------------------------|
-| =RET=   | =upesp+:queue-jump-to-command=   | Jump to this row's log, in the installer buffer          |
-| =n= / =p= | =next-line= / =previous-line=    | Move to the next or previous row                        |
-| =r=     | =upesp+:queue-restart-command=   | Restart a =cancelled= or =failed= row, as a new row        |
-| =k=     | =upesp+:queue-kill-command=      | Kill the row that is currently =installing=               |
-| =q=     | =bury-buffer=                    | Bury the queue buffer                                   |
+| Key       | Command                        | Does                                                |
+|-----------+--------------------------------+-----------------------------------------------------|
+| =RET=     | =upesp+:queue-jump-to-command= | Jump to this row's log, in the installer buffer     |
+| =n= / =p= | =next-line= / =previous-line=  | Move to the next or previous row                    |
+| =r=       | =upesp+:queue-restart-command= | Restart a =cancelled= or =failed= row, as a new row |
+| =k=       | =upesp+:queue-kill-command=    | Kill the row that is currently =installing=         |
+| =q=       | =bury-buffer=                  | Bury the queue buffer                               |
 
 ** The installer buffer
 
 The installer buffer keeps the full transcript for the whole session: every
 command's raw output, in order, with a dashed line between commands. Each
-command's =Executing command : ...= line is bold, and each result line —
-=Command succeeded/failed/cancelled (exit code N): ...= — is colored the same
+command's =Executing command : ...= line is bold, and each result line,
+=Command succeeded/failed/cancelled (exit code N): ...=, is colored the same
 way as its row in the queue buffer.
 
 * Cancelling and Restarting Installs
 
-Sometimes you want to stop a command that is already running — a =sudo=
-password prompt you did not expect, or an install you know is going to
-fail. Two ways to do that:
+Sometimes you want to stop a command that is already running. Maybe a
+=sudo= password prompt you did not expect, or an install you know is going
+to fail. Two ways to do that:
 
 - *At a password prompt:* press =C-g=. This cancels the password read and
   sends an interrupt to the running command, instead of leaving Emacs (and
@@ -107,8 +108,8 @@ Either way, the row's status becomes =cancelled=, and the queue moves on to
 the next command.
 
 To try a cancelled or failed command again, put point on its row in the
-queue buffer and press =r=. This queues the same command as a new row —
-the cancelled or failed row stays in the buffer as a record of what
+queue buffer and press =r=. This queues the same command as a new row.
+The cancelled or failed row stays in the buffer as a record of what
 happened.
 
 * Installation
@@ -145,7 +146,7 @@ forms that use =:ensure-system-package=:
 * Usage
 
 No changes to your existing =use-package= forms are needed.  The package works
-transparently — just use =:ensure-system-package= as usual:
+transparently. Just use =:ensure-system-package= as usual:
 
 #+begin_src emacs-lisp
 (use-package lsp-mode
@@ -212,8 +213,8 @@ distribution once =curl= is available.
 After the install queue drains, the shell process is kept alive for
 ~upesp+:shell-process-expiry~ seconds (default: =360=) before being closed,
 along with the installer and queue buffers.  Keeping it alive lets
-subsequent =:ensure-system-package= declarations reuse the same session —
-and the same =sudo= credential cache — without spawning a new shell.
+subsequent =:ensure-system-package= declarations reuse the same session
+and the same =sudo= credential cache, without spawning a new shell.
 
 Shorten the timeout if you prefer the installer buffer to disappear sooner:
 
@@ -225,9 +226,9 @@ Shorten the timeout if you prefer the installer buffer to disappear sooner:
 
 * Post-install Hook
 
-~upesp+:command-executed-hook~ is called after each command finishes —
-including a cancelled one — with the completed command string as its
-argument.  Use it to react to specific installations — for example, to
+~upesp+:command-executed-hook~ is called after each command finishes,
+including a cancelled one, with the completed command string as its
+argument. Use it to react to specific installations. For example,
 trigger a compilation step once a required system package is available:
 
 #+begin_src emacs-lisp
@@ -237,10 +238,10 @@ trigger a compilation step once a required system package is available:
               (my:recompile-native-module))))
 #+end_src
 
-The hook fires after the shell state is cleared, so it is safe to enqueue
-additional commands or call ~recursive-edit~ inside a hook function. The
-hook does not receive the command's status; read the ~status~ field of its
-entry in ~upesp+:queue-entries~ if you need that.
+The hook fires after the shell state is cleared. As a result, it is safe
+to add more commands to the queue, or call ~recursive-edit~, inside a hook
+function. The hook does not get the command's status. Read the ~status~
+field of its entry in ~upesp+:queue-entries~ for that.
 
 * Running the Tests
 
