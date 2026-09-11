@@ -41,17 +41,18 @@ This package changes how those installs run:
 
 * Installation
 
-** With =use-package= and =straight.el= (recommended)
+** With =use-package= and =:vc= (recommended)
 
 #+begin_src emacs-lisp
 (use-package use-package-ensure-system-package+
-  :straight (:type git :host github
-             :repo "zeph1e/use-package-ensure-system-package-plus.el"
-             :local-repo "use-package-ensure-system-package+"))
+  :vc (:url "https://github.com/zeph1e/use-package-ensure-system-package-plus.el"
+       :rev :newest))
 #+end_src
 
-Place this just after the =straight= bootstrap, before any =use-package= form
-that uses =:ensure-system-package=.
+Place this early in your =init.el=, before any =use-package= form that uses
+=:ensure-system-package=. On Emacs 30 and later, =:vc= uses the built-in
+=package-vc=. On older Emacs, =:vc= still works if you load =straight.el=
+first, which serves =:vc= requests too.
 
 ** Manual
 
