@@ -27,6 +27,7 @@
          (upesp+:command-occupied nil)
          (upesp+:command-ready nil)
          (upesp+:command-executing nil)
+         (upesp+:command-cancelled nil)
          (upesp+:shell-process nil)
          (upesp+:shell-process-terminate-timer nil))
      (unwind-protect
@@ -49,8 +50,14 @@ Returns the predicate value or nil on timeout."
 
 (defun upesp+:test-shell-output ()
   "Return the accumulated output in the installer buffer."
-  (when-let ((buf (get-buffer upesp+:shell-buffer)))
+  (when-let ((buf (and upesp+:shell-process (process-buffer upesp+:shell-process))))
     (with-current-buffer buf (buffer-string))))
+
+(defun upesp+:test-kill-installer-buffers ()
+  "Kill any leftover installer buffer, matching its dynamic renamed form too."
+  (dolist (buf (buffer-list))
+    (when (string-match-p "\\`\\*upesp\\+ installer\\(: .*\\)?\\*\\'" (buffer-name buf))
+      (kill-buffer buf))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Shell process lifecycle
@@ -84,8 +91,7 @@ Returns the predicate value or nil on timeout."
 (ert-deftest upesp+:func/single-command-runs ()
   "A single command executes and its output appears in the installer buffer."
   (upesp+:func-with-clean-state
-    (when-let ((buf (get-buffer upesp+:shell-buffer)))
-      (kill-buffer buf))
+    (upesp+:test-kill-installer-buffers)
     (upesp+:async-shell-command "echo hello-upesp-test")
     (should
      (upesp+:test-wait
@@ -95,37 +101,74 @@ Returns the predicate value or nil on timeout."
 
 (ert-deftest upesp+:func/commands-run-sequentially ()
   "Multiple commands run in FIFO order."
+  ;; Ordering is verified through upesp+:command-executed-hook firing order
+  ;; rather than the installer buffer transcript, since the transcript's
+  ;; own accumulation/separator behaviour is covered separately below.
   (upesp+:func-with-clean-state
-    (when-let ((buf (get-buffer upesp+:shell-buffer)))
-      (kill-buffer buf))
-    (upesp+:async-shell-command "echo STEP1")
-    (upesp+:async-shell-command "echo STEP2")
-    (upesp+:async-shell-command "echo STEP3")
+    (let* ((executed nil)
+           (hook-fn (lambda (cmd) (push cmd executed))))
+      (add-hook 'upesp+:command-executed-hook hook-fn)
+      (unwind-protect
+          (progn
+            (upesp+:async-shell-command "echo STEP1")
+            (upesp+:async-shell-command "echo STEP2")
+            (upesp+:async-shell-command "echo STEP3")
+            (upesp+:test-wait (lambda () (= (length executed) 3)) 10)
+            (should (equal (reverse executed)
+                           '("echo STEP1" "echo STEP2" "echo STEP3"))))
+        (remove-hook 'upesp+:command-executed-hook hook-fn)))))
+
+(ert-deftest upesp+:func/installer-buffer-accumulates-with-separator ()
+  "The installer buffer keeps every command's output, dash-separated."
+  (upesp+:func-with-clean-state
+    (upesp+:test-kill-installer-buffers)
+    (upesp+:async-shell-command "echo ACCUM-STEP1")
+    (upesp+:test-wait
+     (lambda () (string-match-p "ACCUM-STEP1" (or (upesp+:test-shell-output) ""))) 10)
+    (upesp+:async-shell-command "echo ACCUM-STEP2")
     (should
      (upesp+:test-wait
-      (lambda ()
-        (let ((out (or (upesp+:test-shell-output) "")))
-          (and (string-match "STEP1" out)
-               (string-match "STEP2" out)
-               (string-match "STEP3" out)
-               (< (string-match "STEP1" out)
-                  (string-match "STEP2" out)
-                  (string-match "STEP3" out)))))
-      10))))
+      (lambda () (string-match-p "ACCUM-STEP2" (or (upesp+:test-shell-output) ""))) 10))
+    (let ((out (upesp+:test-shell-output)))
+      ;; Both commands' output survived — the buffer was never erased.
+      (should (string-match-p "ACCUM-STEP1" out))
+      (should (string-match-p "ACCUM-STEP2" out))
+      ;; A dash separator line sits between the two commands' sections.
+      (should (string-match-p (regexp-quote (make-string 60 ?-)) out)))))
+
+(ert-deftest upesp+:func/queue-entry-marker-points-into-installer-buffer ()
+  "send-command records a marker on the queue entry once its log starts."
+  (upesp+:func-with-clean-state
+    (upesp+:test-kill-installer-buffers)
+    (upesp+:async-shell-command "echo MARKER-TEST")
+    (should
+     (upesp+:test-wait
+      (lambda () (string-match-p "MARKER-TEST" (or (upesp+:test-shell-output) ""))) 10))
+    (let* ((entry (car upesp+:queue-entries))
+           (marker (upesp+:queue-entry-marker entry)))
+      (should (markerp marker))
+      (should (eq (marker-buffer marker) (process-buffer upesp+:shell-process)))
+      (with-current-buffer (marker-buffer marker)
+        (should (string-match-p "\\`Executing command"
+                                 (buffer-substring-no-properties
+                                  marker (min (point-max) (+ marker 40)))))))))
 
 (ert-deftest upesp+:func/duplicate-commands-run-once ()
   "The same install command is not executed twice."
   (upesp+:func-with-clean-state
-    (when-let ((buf (get-buffer upesp+:shell-buffer)))
-      (kill-buffer buf))
+    (upesp+:test-kill-installer-buffers)
     (upesp+:async-shell-command "echo UNIQUE-MARKER")
     (upesp+:async-shell-command "echo UNIQUE-MARKER")
     ;; Wait for the finalize timer to be set — that means the queue drained.
     (upesp+:test-wait
      (lambda () upesp+:shell-process-terminate-timer) 10)
     (let* ((out (or (upesp+:test-shell-output) ""))
+           ;; Exclude the "Command succeeded/failed: <cmd>" summary line —
+           ;; it echoes the full command text, which also contains the
+           ;; marker, so counting it would double-count a single run.
            (count (cl-count-if
-                   (lambda (line) (string-match "UNIQUE-MARKER" line))
+                   (lambda (line) (and (string-match "UNIQUE-MARKER" line)
+                                       (not (string-prefix-p "Command " line))))
                    (split-string out "\n"))))
       (should (= 1 count)))))
 
@@ -145,8 +188,7 @@ Returns the predicate value or nil on timeout."
 (ert-deftest upesp+:func/shell-reused-for-commands-within-alive-window ()
   "New commands submitted while shell is still alive after draining run on the same shell."
   (upesp+:func-with-clean-state
-    (when-let ((buf (get-buffer upesp+:shell-buffer)))
-      (kill-buffer buf))
+    (upesp+:test-kill-installer-buffers)
     ;; First batch — wait until queue drains (finalize timer set).
     (upesp+:async-shell-command "echo FIRST-BATCH")
     (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
@@ -202,19 +244,21 @@ Returns the predicate value or nil on timeout."
 
 (ert-deftest upesp+:func/same-command-reruns-after-completion ()
   "Submitting the same command after it has run executes it again."
+  ;; Verified via how many times upesp+:command-executed-hook fired for
+  ;; this command, which is unambiguous regardless of buffer content.
   (upesp+:func-with-clean-state
-    (when-let ((buf (get-buffer upesp+:shell-buffer))) (kill-buffer buf))
-    (upesp+:async-shell-command "echo RERUN-MARKER")
-    ;; Wait for queue to drain before re-submitting.
-    (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
-    (upesp+:async-shell-command "echo RERUN-MARKER")
-    (upesp+:test-wait
-     (lambda ()
-       (let* ((out (or (upesp+:test-shell-output) ""))
-              (count (cl-count-if
-                      (lambda (line) (string-match "RERUN-MARKER" line))
-                      (split-string out "\n"))))
-         (= count 2)))
-     10)))
+    (let* ((executed-count 0)
+           (hook-fn (lambda (cmd)
+                      (when (equal cmd "echo RERUN-MARKER")
+                        (cl-incf executed-count)))))
+      (add-hook 'upesp+:command-executed-hook hook-fn)
+      (unwind-protect
+          (progn
+            (upesp+:async-shell-command "echo RERUN-MARKER")
+            ;; Wait for queue to drain before re-submitting.
+            (upesp+:test-wait (lambda () upesp+:shell-process-terminate-timer) 10)
+            (upesp+:async-shell-command "echo RERUN-MARKER")
+            (should (upesp+:test-wait (lambda () (= executed-count 2)) 10)))
+        (remove-hook 'upesp+:command-executed-hook hook-fn)))))
 
 ;;; test-functional.el ends here
