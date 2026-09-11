@@ -30,28 +30,18 @@ environment with many packages this means:
 
 * The Fix
 
-This package advises =use-package-ensure-system-package-consify= to replace
-=async-shell-command= with a custom dispatcher that:
+This package changes how those installs run:
 
-1. Enqueues every install command into a FIFO queue, and gives it a row in
-   the queue buffer, =*upesp+ queue*=.
-2. Maintains *one persistent =/bin/bash= process* started with a custom =PS1=
-   prompt so completion can be detected reliably.
-3. Sends commands to the shell one at a time via =process-send-string=, waiting
-   for the shell prompt to appear before sending the next command.
-4. Handles =sudo= password prompts without blocking Emacs. =C-g= cancels a
-   prompt cleanly. See [[*Cancelling and Restarting Installs][Cancelling and Restarting Installs]].
-5. Bootstraps a missing package manager automatically. For example, it
-   installs =npm= through =apt= before it runs an =npm install=.
-6. Logs every command's output to the installer buffer, =*upesp+ installer*=,
-   without erasing what came before. The whole session's transcript stays
-   available, one command's section at a time, separated by a divider line.
-7. When the queue drains, schedules the shell to close after an idle timeout
-   (default 360 seconds).  If new commands arrive before the timeout fires,
-   the existing shell is reused without restarting.
-
-Because all commands share one shell, =sudo='s credential cache persists across
-the entire batch. You type your password once.
+- All installs go through *one shared shell*, so =sudo= only asks for your
+  password once per batch, no matter how many packages you install.
+- Every command gets a row in the queue buffer and its own section in the
+  installer buffer, so you can see what ran, what is running, and what
+  failed.
+- A missing package manager is installed automatically before the packages
+  that need it. For example, =npm= is installed through =apt= before an
+  =npm install=.
+- You can cancel a command with =C-g= or =k=, instead of Emacs getting
+  stuck. See [[*Cancelling and Restarting Installs][Cancelling and Restarting Installs]].
 
 * Queue and Installer Buffers
 
@@ -242,21 +232,6 @@ The hook fires after the shell state is cleared. As a result, it is safe
 to add more commands to the queue, or call ~recursive-edit~, inside a hook
 function. The hook does not get the command's status. Read the ~status~
 field of its entry in ~upesp+:queue-entries~ for that.
-
-* Running the Tests
-
-Unit and functional tests are written in ERT and live in the =test/= directory.
-
-#+begin_src sh
-# Run all tests
-./test/run-tests.sh
-
-# Unit tests only (no real shell spawned)
-./test/run-tests.sh unit
-
-# Functional tests only (spawns real /bin/bash processes)
-./test/run-tests.sh func
-#+end_src
 
 * License
 
