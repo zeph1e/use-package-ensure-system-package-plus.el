@@ -1,7 +1,7 @@
 #+title: use-package-ensure-system-package+
 #+author: Yunsik Jang
 #+email: z3ph1e@gmail.com
-#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/html-theme-readtheorg.setup
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/setup/html-theme-readtheorg.setup
 
 An Emacs package that improves [[https://github.com/jwiegley/use-package][use-package]]'s =:ensure-system-package= keyword. It runs
 all system package installations through a *single shared shell session*, so
@@ -9,10 +9,6 @@ all system package installations through a *single shared shell session*, so
 and an installer log show you exactly what is happening.
 
 [[file:screenshots/overview.png]]
-
-/Left: the queue buffer, one row per command, colored by status. Right: the
-installer buffer, with the full transcript of every command run this
-session./
 
 * The Problem
 
@@ -42,6 +38,56 @@ This package changes how those installs run:
   =npm install=.
 - You can cancel a command with =C-g= or =k=, instead of Emacs getting
   stuck. See [[*Cancelling and Restarting Installs][Cancelling and Restarting Installs]].
+
+* Installation
+
+** With =use-package= and =straight.el= (recommended)
+
+#+begin_src emacs-lisp
+(use-package use-package-ensure-system-package+
+  :straight (:type git :host github
+             :repo "zeph1e/use-package-ensure-system-package-plus.el"
+             :local-repo "use-package-ensure-system-package+"))
+#+end_src
+
+Place this just after the =straight= bootstrap, before any =use-package= form
+that uses =:ensure-system-package=.
+
+** Manual
+
+Clone the repository into your Emacs =load-path=:
+
+#+begin_src sh
+git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
+  ~/.emacs.d/plugins/use-package-ensure-system-package+
+#+end_src
+
+Then require it early in your =init.el=, after =use-package= and
+=use-package-ensure-system-package= are loaded but before any =use-package=
+forms that use =:ensure-system-package=:
+
+#+begin_src emacs-lisp
+(require 'use-package-ensure-system-package+)
+#+end_src
+
+* Usage
+
+No changes to your existing =use-package= forms are needed.  The package works
+transparently. Just use =:ensure-system-package= as usual:
+
+#+begin_src emacs-lisp
+(use-package lsp-mode
+  :ensure-system-package
+  ((typescript-language-server . "npm -g install typescript-language-server")
+   (pylsp . "sudo apt install -y python3-pylsp")))
+
+(use-package helm
+  :ensure-system-package (ag . "sudo apt install -y silversearcher-ag"))
+#+end_src
+
+When Emacs starts and these packages are missing, all installs are queued,
+shown in the queue buffer, and run one at a time in the installer buffer.
+=sudo= is only invoked once.
 
 * Queue and Installer Buffers
 
@@ -101,56 +147,6 @@ To try a cancelled or failed command again, put point on its row in the
 queue buffer and press =r=. This queues the same command as a new row.
 The cancelled or failed row stays in the buffer as a record of what
 happened.
-
-* Installation
-
-** With =use-package= and =straight.el= (recommended)
-
-#+begin_src emacs-lisp
-(use-package use-package-ensure-system-package+
-  :straight (:type git :host github
-             :repo "zeph1e/use-package-ensure-system-package-plus.el"
-             :local-repo "use-package-ensure-system-package+"))
-#+end_src
-
-Place this just after the =straight= bootstrap, before any =use-package= form
-that uses =:ensure-system-package=.
-
-** Manual
-
-Clone the repository into your Emacs =load-path=:
-
-#+begin_src sh
-git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
-  ~/.emacs.d/plugins/use-package-ensure-system-package+
-#+end_src
-
-Then require it early in your =init.el=, after =use-package= and
-=use-package-ensure-system-package= are loaded but before any =use-package=
-forms that use =:ensure-system-package=:
-
-#+begin_src emacs-lisp
-(require 'use-package-ensure-system-package+)
-#+end_src
-
-* Usage
-
-No changes to your existing =use-package= forms are needed.  The package works
-transparently. Just use =:ensure-system-package= as usual:
-
-#+begin_src emacs-lisp
-(use-package lsp-mode
-  :ensure-system-package
-  ((typescript-language-server . "npm -g install typescript-language-server")
-   (pylsp . "sudo apt install -y python3-pylsp")))
-
-(use-package helm
-  :ensure-system-package (ag . "sudo apt install -y silversearcher-ag"))
-#+end_src
-
-When Emacs starts and these packages are missing, all installs are queued,
-shown in the queue buffer, and run one at a time in the installer buffer.
-=sudo= is only invoked once.
 
 * Package Manager Bootstrap
 
