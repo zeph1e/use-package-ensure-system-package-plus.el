@@ -53,6 +53,8 @@ Each command's `"Executing command"` line uses the `bold` face. Each result line
 
 ## Password Prompts and Cancellation
 
+`upesp+:process-filter` checks output against two patterns to find a password prompt: the built-in `comint-password-prompt-regexp`, and `upesp+:extra-password-prompt-regexp`. The extra pattern exists because some newer distributions, for example Ubuntu 26.04 with sudo-rs, show a bracketed prompt like `[sudo: authenticate] Password: ` instead of the classic `[sudo] password for USER: `. `comint-password-prompt-regexp` requires its own `[sudo]` keyword, or a bare password word, right at the start of the chunk, so the extra `[sudo: ...]` prefix defeats it. If a future prompt format still slips through both patterns, extend `upesp+:extra-password-prompt-regexp` rather than replace it, so the classic and bracketed forms both keep matching.
+
 When output matches a password prompt, `upesp+:process-filter` shows the installer buffer and inserts the raw prompt text. It does not read the password itself. Instead, it schedules `upesp+:ask-password` on a timer, with `run-with-timer 0`.
 
 The plugin needs this timer for one reason: quitting. Emacs inhibits quitting for a process filter's whole run. As a result, a stray C-g mid-filter cannot leave process state or buffer state half-updated. A `read-passwd` call made directly inside the filter runs inside that inhibited state. There, C-g cannot raise `quit`. `with-local-quit` does not fix this. It catches the quit itself and only sets `quit-flag` again, instead of raising the quit back to the caller. A timer callback runs from the normal command loop, outside the inhibited state. There, C-g at `read-passwd` works like it does at any other prompt.
@@ -94,4 +96,5 @@ The hook also runs for a `cancelled` command, with the same one argument, the co
 
 - To add a new package manager bootstrap, add an entry to `upesp+:package-manager-deps`.
 - To change how a status looks, edit `upesp+:status-face`.
+- To recognize a new password prompt format, extend `upesp+:extra-password-prompt-regexp` instead of replacing it, so older formats keep matching too.
 - The `.installed` sentinel file, in `plugins/use-package-ensure-system-package+/`, stops recompilation on every startup. After you edit the `.el` file, delete this sentinel file to force a rebuild.

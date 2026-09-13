@@ -84,6 +84,18 @@ ending up in the shell's output is e.g. \"upesp_plus_prompt:0$ \" or
           (regexp-quote "$ "))
   "Matches a displayed shell prompt; group 1 is the previous exit status.")
 
+(defconst upesp+:extra-password-prompt-regexp
+  (concat
+   "\\`\\[sudo:[^]\n]*\\][[:space:]]*"
+   "\\(?:" (regexp-opt password-word-equivalents) "\\)"
+   "[" (apply #'string password-colon-equivalents) "][[:space:]]*\\'")
+  "Matches password prompts that `comint-password-prompt-regexp' misses.
+Some newer distributions, for example Ubuntu 26.04 with sudo-rs, show a
+bracketed prompt like \"[sudo: authenticate] Password: \" instead of the
+classic \"[sudo] password for USER: \". `comint-password-prompt-regexp'
+requires its own \"[sudo]\" keyword, or a bare password word, right at the
+start of the chunk, so the extra \"[sudo: ...]\" prefix defeats it.")
+
 (defcustom upesp+:command-executed-hook nil
   "Hook run when a command was executed."
   :group 'upesp+
@@ -419,7 +431,8 @@ prompt reappears after the interrupt) marks it `'cancelled'."
         ;; the window away from the queue buffer every time a command
         ;; starts. See `upesp+:queue-buffer-popup'.
         (goto-char (point-max))
-        (cond ((string-match-p comint-password-prompt-regexp output)
+        (cond ((or (string-match-p comint-password-prompt-regexp output)
+                   (string-match-p upesp+:extra-password-prompt-regexp output))
                ;; Show the installer buffer. A password prompt always
                ;; needs the user's attention. As a result, the buffer
                ;; stays visible afterward, unlike for other output.

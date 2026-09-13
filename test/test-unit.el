@@ -314,6 +314,49 @@ zero-delay timer instead, and touch no cancellation state itself."
           (should (null upesp+:command-cancelled)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; upesp+:extra-password-prompt-regexp
+
+(ert-deftest upesp+:extra-password-prompt-regexp/matches-bracketed-sudo-rs-prompt ()
+  "Matches the bracketed prompt some newer distributions use, for example
+sudo-rs on Ubuntu 26.04, which `comint-password-prompt-regexp' misses."
+  (let ((case-fold-search t))
+    (should (string-match-p upesp+:extra-password-prompt-regexp
+                            "[sudo: authenticate] Password: "))
+    (should (string-match-p upesp+:extra-password-prompt-regexp
+                            "[sudo: retry] Password: "))))
+
+(ert-deftest upesp+:extra-password-prompt-regexp/does-not-match-classic-prompt ()
+  "The classic prompt is already `comint-password-prompt-regexp''s job."
+  (let ((case-fold-search t))
+    (should-not (string-match-p upesp+:extra-password-prompt-regexp
+                                "[sudo] password for user: "))
+    (should-not (string-match-p upesp+:extra-password-prompt-regexp
+                                "Password: "))))
+
+(ert-deftest upesp+:extra-password-prompt-regexp/does-not-match-mid-string-or-trailing-text ()
+  "Only a chunk that starts with the bracket and ends at the colon counts."
+  (let ((case-fold-search t))
+    (should-not (string-match-p upesp+:extra-password-prompt-regexp
+                                "some other [sudo: authenticate] text"))
+    (should-not (string-match-p upesp+:extra-password-prompt-regexp
+                                "[sudo: authenticate] Password: extra"))))
+
+(ert-deftest upesp+:process-filter/recognizes-bracketed-sudo-rs-prompt ()
+  "The filter's password-prompt branch must also fire for the bracketed
+prompt, not only for `comint-password-prompt-regexp''s classic form."
+  (upesp+:with-clean-state
+    (with-temp-buffer
+      (let (scheduled)
+        (cl-letf (((symbol-function 'process-buffer) (lambda (_) (current-buffer)))
+                  ((symbol-function 'get-buffer-window) (lambda (&rest _) nil))
+                  ((symbol-function 'display-buffer) #'ignore)
+                  ((symbol-function 'run-with-timer)
+                   (lambda (secs repeat fn &rest args)
+                     (setq scheduled (list secs repeat fn args)))))
+          (upesp+:process-filter 'fake-proc "[sudo: authenticate] Password: ")
+          (should (eq (nth 2 scheduled) 'upesp+:ask-password)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; upesp+:ask-password
 
 (ert-deftest upesp+:ask-password/sends-entered-password-to-process ()
