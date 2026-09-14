@@ -40,7 +40,7 @@ change shape.")
 (defvar upesp+:command-cancelled nil
   "Non-nil when the currently executing command was interrupted via C-g
 at a password prompt. Read once by the exit-code branch of
-`upesp+:process-filter' to record `'cancelled' instead of `'success'/`'failed',
+`upesp+:process-filter' to record `'cancelled' instead of `'succeeded'/`'failed',
 then reset to nil.")
 
 (defcustom upesp+:package-manager-deps
@@ -97,14 +97,18 @@ requires its own \"[sudo]\" keyword, or a bare password word, right at the
 start of the chunk, so the extra \"[sudo: ...]\" prefix defeats it.")
 
 (defcustom upesp+:command-executed-hook nil
-  "Hook run when a command was executed."
+  "Hook run when a command was executed.
+A handler may be defined to take 0 to 2 arguments.
+If handler takes 1 argument, only the executed command is given as argument.
+If handler takes 2 or more arguments, second argument may have one of
+'succeeded / 'failed / 'cancelled."
   :group 'upesp+
   :type '(repeat function))
 
 ;;; Installation queue status buffer
 
 (cl-defstruct upesp+:queue-entry
-  ;; status: 'waiting / 'installing / 'success / 'failed / 'cancelled
+  ;; status: 'waiting / 'installing / 'succeeded / 'failed / 'cancelled
   ;; marker: nil until the command's log starts
   id cmd label pkgmgr status marker)
 
@@ -273,14 +277,14 @@ own prompt reappears."
   (if face (propertize text 'face face) text))
 
 (defun upesp+:status-face (status)
-  "Face for STATUS (`'installing'/`'success'/`'failed'/`'cancelled'), or nil
+  "Face for STATUS (`'installing'/`'succeeded'/`'failed'/`'cancelled'), or nil
 for the plain face. Shared by the queue buffer's rows and the installer
 buffer's own \"Executing command\"/result lines, so both agree on what
 each status looks like. `'cancelled' gets no distinct face — it is not a
 normal outcome to draw attention to, just a record."
   (cond
    ((eq status 'installing) 'bold)
-   ((eq status 'success) 'success)
+   ((eq status 'succeeded) 'succeeded)
    ((eq status 'failed) 'error)))
 
 (defun upesp+:queue-status-face (entry)
@@ -452,14 +456,15 @@ prompt reappears after the interrupt) marks it `'cancelled'."
                  (let* ((executed-cmd upesp+:command-executing)
                         (executed-id upesp+:command-executing-id)
                         (cancelled upesp+:command-cancelled)
-                        (success (and (not cancelled) (string= exit-code "0")))
+                        (succeeded (and (not cancelled)
+                                        (string= exit-code "0")))
                         (status (cond (cancelled 'cancelled)
-                                      (success 'success)
+                                      (succeeded 'succeeded)
                                       (t 'failed))))
                    (insert (upesp+:queue-row-cell
                             (format "\nCommand %s (exit code %s): %S\n"
                                     (cond (cancelled "cancelled")
-                                          (success "succeeded")
+                                          (succeeded "succeeded")
                                           (t "failed"))
                                     exit-code executed-cmd)
                             (upesp+:status-face status)))
@@ -468,8 +473,17 @@ prompt reappears after the interrupt) marks it `'cancelled'."
                          upesp+:command-executing-id nil
                          upesp+:command-cancelled nil)
                    (upesp+:queue-set-status executed-id status)
-                   (run-hook-with-args 'upesp+:command-executed-hook
-                                       executed-cmd))
+                   ;; run hook with dynamic arguments
+                   (mapc (lambda (handler)
+                           (let* ((arity (func-arity handler))
+                                  (max-args (cdr arity)))
+                             (cond
+                              ((and (numberp max-args) (eq max-args 1))
+                               (apply handler (list executed-cmd)))
+                              ((and (numberp max-args) (eq max-args 0))
+                               (apply handler nil))
+                              (t (apply handler (list executed-cmd status))))))
+                         upesp+:command-executed-hook))
                  (upesp+:run-next)))
               (t
                (let* ((normalized (upesp+:normalize-cursor-escapes output))

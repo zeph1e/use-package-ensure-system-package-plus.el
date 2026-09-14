@@ -44,9 +44,9 @@ This package changes how those installs run:
 ** With =use-package= and =:vc= (recommended)
 
 #+begin_src emacs-lisp
-(use-package use-package-ensure-system-package+
-  :vc (:url "https://github.com/zeph1e/use-package-ensure-system-package-plus.el"
-       :rev :newest))
+  (use-package use-package-ensure-system-package+
+    :vc (:url "https://github.com/zeph1e/use-package-ensure-system-package-plus.el"
+         :rev :newest))
 #+end_src
 
 Place this early in your =init.el=, before any =use-package= form that uses
@@ -59,8 +59,8 @@ first, which serves =:vc= requests too.
 Clone the repository into your Emacs =load-path=:
 
 #+begin_src sh
-git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
-  ~/.emacs.d/plugins/use-package-ensure-system-package+
+  git clone https://github.com/zeph1e/use-package-ensure-system-package-plus.el \
+    ~/.emacs.d/plugins/use-package-ensure-system-package+
 #+end_src
 
 Then require it early in your =init.el=, after =use-package= and
@@ -77,13 +77,13 @@ No changes to your existing =use-package= forms are needed.  The package works
 transparently. Just use =:ensure-system-package= as usual:
 
 #+begin_src emacs-lisp
-(use-package lsp-mode
-  :ensure-system-package
-  ((typescript-language-server . "npm -g install typescript-language-server")
-   (pylsp . "sudo apt install -y python3-pylsp")))
+  (use-package lsp-mode
+    :ensure-system-package
+    ((typescript-language-server . "npm -g install typescript-language-server")
+     (pylsp . "sudo apt install -y python3-pylsp")))
 
-(use-package helm
-  :ensure-system-package (ag . "sudo apt install -y silversearcher-ag"))
+  (use-package helm
+    :ensure-system-package (ag . "sudo apt install -y silversearcher-ag"))
 #+end_src
 
 When Emacs starts and these packages are missing, all installs are queued,
@@ -105,7 +105,7 @@ status also sets the row's color:
 |--------------+---------------------------------------+-------|
 | =waiting=    | Queued, not started yet               | gray  |
 | =installing= | Running right now                     | bold  |
-| =success=    | Finished with exit code 0             | green |
+| =succeeded=  | Finished with exit code 0             | green |
 | =failed=     | Finished with a non-zero exit code    | red   |
 | =cancelled=  | Interrupted by you, with =C-g= or =k= | plain |
 
@@ -181,15 +181,15 @@ The defaults assume a Debian/Ubuntu system.  On Red Hat, Fedora, or any
 assumed-present system package manager:
 
 #+begin_src emacs-lisp
-(use-package use-package-ensure-system-package+
-  :custom
-  (upesp+:package-manager-deps
-   '(("dnf"  . nil)
-     ("curl" . ("sudo dnf install -y curl"))
-     ("npm"  . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
-                "source ~/.nvm/nvm.sh"
-                "nvm install --lts"))
-     ("pip"  . ("sudo dnf install -y python3-pip")))))
+  (use-package use-package-ensure-system-package+
+    :custom
+    (upesp+:package-manager-deps
+     '(("dnf"  . nil)
+       ("curl" . ("sudo dnf install -y curl"))
+       ("npm"  . ("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash"
+                  "source ~/.nvm/nvm.sh"
+                  "nvm install --lts"))
+       ("pip"  . ("sudo dnf install -y python3-pip")))))
 #+end_src
 
 The =npm= bootstrap still uses =curl= and =nvm=, so it works unchanged on any
@@ -206,29 +206,35 @@ and the same =sudo= credential cache, without spawning a new shell.
 Shorten the timeout if you prefer the installer buffer to disappear sooner:
 
 #+begin_src emacs-lisp
-(use-package use-package-ensure-system-package+
-  :custom
-  (upesp+:shell-process-expiry 60))   ; close shell 60 s after queue drains
+  (use-package use-package-ensure-system-package+
+    :custom
+    (upesp+:shell-process-expiry 60))   ; close shell 60 s after queue drains
 #+end_src
 
 * Post-install Hook
 
 ~upesp+:command-executed-hook~ is called after each command finishes,
-including a cancelled one, with the completed command string as its
-argument. Use it to react to specific installations. For example,
+including a cancelled one. A handler for this hook can have zero to two arguments.
+If a handler has two arguments, the first argument receives the command string.
+The second argument receives one of these values: 'succeeded, 'failed, or 'cancelled.
+
+Use it to react to specific installations. For example,
 trigger a compilation step once a required system package is available:
 
 #+begin_src emacs-lisp
-(add-hook 'upesp+:command-executed-hook
-          (lambda (cmd)
-            (when (string-match-p "build-essential" cmd)
-              (my:recompile-native-module))))
+  (add-hook 'upesp+:command-executed-hook
+            (lambda () (message "whatever installation is done")))
+
+  (add-hook 'upesp+:command-executed-hook
+            (lambda (cmd status)
+              (when (and (string-match-p "build-essential" cmd)
+                         (eq status 'succeeded))
+                (my:recompile-native-module))))
 #+end_src
 
 The hook fires after the shell state is cleared. As a result, it is safe
 to add more commands to the queue, or call ~recursive-edit~, inside a hook
-function. The hook does not get the command's status. Read the ~status~
-field of its entry in ~upesp+:queue-entries~ for that.
+function.
 
 * License
 
